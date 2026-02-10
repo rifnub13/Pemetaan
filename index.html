@@ -3,53 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>FTTH Planner V7 - Auto Engine</title>
+    <title>FTTH Planner V8 - ODC Estafet</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --dark: #121212; --accent: #f39c12; --blue: #3498db; }
+        :root { --dark: #1a1a1a; --olt: #000; --odc: #8e44ad; --odp: #e67e22; --onu: #3498db; }
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; }
         #map { height: 100vh; width: 100vw; }
 
-        /* UI */
-        .panel { position: absolute; z-index: 1000; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 12px; border: 1px solid #444; backdrop-filter: blur(8px); }
-        .top-left { top: 10px; left: 10px; width: 160px; }
-        .bottom-info { bottom: 10px; left: 10px; right: 10px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+        .panel { position: absolute; z-index: 1000; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; border: 1px solid #444; backdrop-filter: blur(8px); }
+        .top-left { top: 10px; left: 10px; width: 150px; }
+        .bottom-ui { bottom: 10px; left: 10px; right: 10px; font-size: 11px; display: flex; justify-content: space-between; }
 
-        button { border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-bottom: 5px; }
-        .btn-add { background: #2ecc71; color: white; }
-        .btn-edit { background: #f1c40f; color: black; margin-top: 5px; }
-        .btn-gps { background: #3498db; color: white; }
-        .active { outline: 3px solid white; }
+        button { border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 10px; width: 100%; margin-bottom: 5px; color: white; }
+        .btn-olt { background: var(--olt); }
+        .btn-odc { background: var(--odc); }
+        .btn-odp { background: var(--odp); }
+        .btn-onu { background: var(--onu); }
+        .active { outline: 3px solid #f1c40f; }
 
-        /* Modal Custom */
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000; background: white; color: black; padding: 20px; border-radius: 15px; width: 85%; max-width: 320px; box-shadow: 0 0 50px rgba(0,0,0,0.9); }
-        input, select { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000; background: white; color: black; padding: 15px; border-radius: 12px; width: 85%; max-width: 300px; box-shadow: 0 0 50px rgba(0,0,0,0.9); }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
         
-        .pwr-label { background: black; color: #0f0; padding: 2px 5px; border-radius: 4px; font-size: 10px; font-family: monospace; border: 1px solid #555; }
-        .cable-label { background: white; color: red; padding: 1px 3px; font-size: 9px; font-weight: bold; border-radius: 3px; }
+        .pwr-tag { background: #000; color: #0f0; padding: 1px 4px; border-radius: 4px; font-size: 9px; font-family: monospace; }
     </style>
 </head>
 <body>
 
 <div class="panel top-left">
-    <button class="btn-gps" onclick="locateMe()">📍 LOKASI SAYA</button>
-    <div style="height: 1px; background: #444; margin: 5px 0;"></div>
-    <button class="btn-add" id="btn-OLT" onclick="setMode('OLT')">➕ OLT</button>
-    <button class="btn-add" id="btn-ODP" onclick="setMode('ODP')">➕ ODP</button>
-    <button class="btn-add" id="btn-ONU" onclick="setMode('ONU')">🏠 ONU</button>
-    <button style="background:#e74c3c; color:white;" onclick="undo()">UNDO</button>
+    <button class="btn-olt" id="btn-OLT" onclick="setMode('OLT')">➕ OLT</button>
+    <button class="btn-odc" id="btn-ODC" onclick="setMode('ODC')">➕ ODC PUSAT</button>
+    <button class="btn-odp" id="btn-ODP" onclick="setMode('ODP')">➕ ODP ESTAFET</button>
+    <button class="btn-onu" id="btn-ONU" onclick="setMode('ONU')">🏠 ONU</button>
+    <button style="background:#e74c3c" onclick="undo()">UNDO</button>
 </div>
 
-<div class="panel bottom-info">
-    <div id="sel-status">Aktif: <b style="color:var(--accent)">Pilih Sumber</b></div>
-    <button style="width:auto; padding:5px; background:#444; color:white;" onclick="saveData()">SIMPAN</button>
+<div class="panel bottom-ui">
+    <div id="sel-info">Aktif: <b>Pilih Sumber</b></div>
+    <button style="width:auto; padding:5px; background:#444;" onclick="resetAll()">RESET</button>
 </div>
 
-<!-- Modal Config -->
 <div id="modal-form" class="modal">
-    <h3 id="m-title" style="margin:0">Setting Perangkat</h3>
+    <h3 id="m-title" style="margin:0; font-size:16px;">Konfigurasi</h3>
     <div id="m-body"></div>
-    <button class="btn-add" onclick="commitNode()">SIMPAN PERUBAHAN</button>
+    <button style="background:#2ecc71; color:white;" onclick="commitNode()">KONFIRMASI</button>
     <button style="background:#bdc3c7;" onclick="closeM()">BATAL</button>
 </div>
 
@@ -57,173 +53,117 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Lokasi Default sesuai permintaan (Sekitar Temanggung)
-    const defLoc = [-7.318, 110.169];
-    const map = L.map('map', { zoomControl: false }).setView(defLoc, 17);
-    
-    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
-        maxZoom: 21, subdomains:['mt0','mt1','mt2','mt3']
-    }).addTo(map);
+    const map = L.map('map', { zoomControl: false }).setView([-7.318, 110.169], 16);
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
 
-    let nodes = JSON.parse(localStorage.getItem('ftth_v7_data')) || [];
-    let curMode = null;
-    let selId = null;
-    let tempCoord = null;
-    let isEditing = false;
+    let nodes = JSON.parse(localStorage.getItem('ftth_v8_data')) || [];
+    let curMode = null, selId = null, tempLL = null;
 
     const LOSS = { km: 0.35, conn: 0.5 };
-    const PLC = { "1:2": 3.5, "1:4": 7.2, "1:8": 10.5, "1:16": 13.8 };
-
-    function locateMe() { map.locate({setView: true, maxZoom: 18}); }
-    map.on('locationfound', e => L.circle(e.latlng, {radius: 5}).addTo(map));
+    const PLC = { "1:2": 4.6, "1:4": 7.2, "1:8": 10.5, "1:16": 13.8 }; // 1:2 disesuaikan gambar 4.6dB
 
     function setMode(m) {
-        curMode = m; isEditing = false;
-        document.querySelectorAll('.btn-add').forEach(b => b.classList.remove('active'));
+        curMode = m;
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         if(m) document.getElementById('btn-'+m).classList.add('active');
     }
 
     map.on('click', e => {
         if(!curMode) return;
-        let p = nodes.find(n => n.id === selId);
-        if(curMode !== 'OLT' && (!p || p.type === 'ONU')) return alert("Pilih OLT/ODP sebagai sumber!");
-        tempCoord = e.latlng;
+        tempLL = e.latlng;
         openM();
     });
 
-    function openM(editingNode = null) {
+    function openM() {
         const b = document.getElementById('m-body');
         document.getElementById('modal-form').style.display = 'block';
-        
-        let target = editingNode || { type: curMode };
-
-        if(target.type === 'OLT') {
-            b.innerHTML = `Power SFP (dBm): <input type="number" id="f-pwr" value="${target.pOutN || 7}">
-                           Nama: <input id="f-name" value="${target.name || 'OLT Pusat'}">`;
-        } else if(target.type === 'ODP') {
-            b.innerHTML = `Tipe Box: <select id="f-box">
-                <option value="FBT" ${target.box==='FBT'?'selected':''}>FBT (Tapping)</option>
-                <option value="PLC" ${target.box==='PLC'?'selected':''}>PLC Murni</option>
-            </select>
-            Rasio Tap (Ke Lokal) %: <input type="number" id="f-ratio" value="${target.ratio || 10}">
-            Splitter Lokal: <select id="f-plc">
-                <option value="1:8" ${target.plc==='1:8'?'selected':''}>1:8</option>
-                <option value="1:16" ${target.plc==='1:16'?'selected':''}>1:16</option>
-                <option value="1:4" ${target.plc==='1:4'?'selected':''}>1:4</option>
-            </select>`;
-        } else {
-            b.innerHTML = `Nama Pelanggan: <input id="f-name" value="${target.name || ''}">`;
-        }
+        if(curMode === 'OLT') b.innerHTML = `SFP Power (dB): <input type="number" id="f-pwr" value="8">`;
+        else if(curMode === 'ODC') b.innerHTML = `Splitter ODC: <select id="f-plc"><option value="1:2">1:2 (4.6 dB)</option></select>`;
+        else if(curMode === 'ODP') b.innerHTML = `Rasio FBT (Tap): <input type="number" id="f-tap" value="10" placeholder="Contoh: 12"> <small>Tap masuk ke PLC 1:8, sisanya diteruskan</small>`;
+        else b.innerHTML = `Nama Pelanggan: <input id="f-name">`;
     }
 
     function commitNode() {
-        if(isEditing) {
-            let n = nodes.find(x => x.id === selId);
-            updateNodeData(n);
+        let p = nodes.find(n => n.id === selId);
+        if(curMode !== 'OLT' && !p) return alert("Pilih sumber power di peta!");
+
+        let n = { id: Date.now(), latlng: tempLL, type: curMode, parentId: selId };
+
+        if(curMode === 'OLT') {
+            n.pIn = parseFloat(document.getElementById('f-pwr').value);
+            n.pOutN = n.pIn;
+            n.name = "OLT";
+        } else if(curMode === 'ODC') {
+            n.lossVal = PLC[document.getElementById('f-plc').value];
+            n.name = "ODC PUSAT";
+        } else if(curMode === 'ODP') {
+            n.ratio = parseInt(document.getElementById('f-tap').value);
+            n.name = `ODP ${100-n.ratio}/${n.ratio}`;
         } else {
-            let n = { id: Date.now(), latlng: tempCoord, type: curMode, parentId: selId, name: '' };
-            updateNodeData(n);
-            nodes.push(n);
-            selId = n.id;
+            n.name = document.getElementById('f-name').value || "User";
         }
-        recalculateAll();
-        closeM();
-        render();
+
+        nodes.push(n);
+        selId = n.id;
+        recalc(); closeM(); render();
     }
 
-    function updateNodeData(n) {
-        if(n.type === 'OLT') {
-            n.pOutN = parseFloat(document.getElementById('f-pwr').value);
-            n.name = document.getElementById('f-name').value;
-        } else if(n.type === 'ODP') {
-            n.box = document.getElementById('f-box').value;
-            n.ratio = parseInt(document.getElementById('f-ratio').value);
-            n.plc = document.getElementById('f-plc').value;
-            n.name = n.box === 'FBT' ? `ODP ${100-n.ratio}/${n.ratio}` : "ODP PLC";
-        } else {
-            n.name = document.getElementById('f-name').value || "Pelanggan";
-        }
-    }
-
-    function recalculateAll() {
-        // Find OLTs as starting points
+    function recalc() {
         nodes.filter(n => n.type === 'OLT').forEach(olt => {
             olt.pIn = olt.pOutN;
-            calcChildren(olt);
+            processChildren(olt);
         });
     }
 
-    function calcChildren(parent) {
-        nodes.filter(n => n.parentId === parent.id).forEach(child => {
-            let dist = parent.latlng.distanceTo(child.latlng) / 1000;
-            child.lC = (dist * LOSS.km) + LOSS.conn;
+    function processChildren(parent) {
+        nodes.filter(n => n.parentId === parent.id).forEach(c => {
+            let d = parent.latlng.distanceTo(c.latlng) / 1000;
+            c.lC = (d * LOSS.km) + LOSS.conn;
             
-            // Power In logic
-            let sourcePower = (parent.type === 'OLT' || (parent.type === 'ODP' && parent.pOutN !== -99)) ? parent.pOutN : parent.pOutL;
-            if(child.type === 'ONU') sourcePower = parent.pOutL; // ONU always from Local
+            // Logika Power Source
+            let src = (parent.type === 'OLT' || parent.type === 'ODC') ? parent.pOutN : parent.pOutN;
+            if(c.type === 'ONU') src = parent.pOutL;
 
-            child.pIn = sourcePower - child.lC;
+            c.pIn = src - c.lC;
 
-            if(child.type === 'ODP') {
-                let plcL = PLC[child.plc];
-                if(child.box === 'FBT') {
-                    let lTap = -10 * Math.log10(child.ratio/100);
-                    let lThru = -10 * Math.log10((100-child.ratio)/100);
-                    child.pOutL = child.pIn - lTap - plcL;
-                    child.pOutN = child.pIn - lThru;
-                } else {
-                    child.pOutL = child.pIn - plcL;
-                    child.pOutN = -99;
-                }
+            if(c.type === 'ODC') {
+                c.pOutN = c.pIn - c.lossVal;
+            } else if(c.type === 'ODP') {
+                let lTap = -10 * Math.log10(c.ratio/100);
+                let lThru = -10 * Math.log10((100-c.ratio)/100);
+                c.pOutL = c.pIn - lTap - PLC["1:8"]; // Jalur ke ONU
+                c.pOutN = c.pIn - lThru; // Jalur Estafet
             }
-            calcChildren(child); // Recursive to end of line
+            processChildren(c);
         });
     }
 
     function render() {
         map.eachLayer(l => { if(l instanceof L.CircleMarker || l instanceof L.Polyline || l instanceof L.Marker) map.removeLayer(l); });
-        
         nodes.forEach(n => {
-            let color = n.pIn < -27 ? '#e74c3c' : (n.type==='OLT'?'#000':(n.type==='ODP'?'#f39c12':'#3498db'));
-            let m = L.circleMarker(n.latlng, { radius: n.id === selId ? 10 : 7, fillColor: color, color: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+            let color = n.type==='OLT'?'#000':(n.type==='ODC'?'#8e44ad':(n.type==='ODP'?'#e67e22':'#3498db'));
+            let m = L.circleMarker(n.latlng, { radius: n.id===selId?10:7, fillColor:color, color:'#fff', fillOpacity:1, weight:2 }).addTo(map);
             
-            // Label Power
-            L.marker(n.latlng, { icon: L.divIcon({ className: 'pwr-label', html: n.pIn.toFixed(1), iconSize:[35,12], iconAnchor:[17,-12] }) }).addTo(map);
+            L.marker(n.latlng, { icon: L.divIcon({ className:'pwr-tag', html:n.pIn.toFixed(1), iconSize:[30,12], iconAnchor:[15,-10] }) }).addTo(map);
 
             m.on('click', e => { L.DomEvent.stopPropagation(e); selId = n.id; render(); });
-
-            let pop = `<b>${n.name}</b><br>Pin: ${n.pIn.toFixed(2)} dBm<br>`;
-            if(n.type==='ODP') pop += `<small>Inside: ${n.box} ${n.ratio?n.ratio+'%':''} + PLC ${n.plc}</small><br>`;
-            pop += `<button class="btn-edit" onclick="startEdit(${n.id})">⚙️ EDIT / SETTING</button>`;
-            pop += `<button style="background:red; color:white; margin-top:5px;" onclick="del(${n.id})">HAPUS</button>`;
-            m.bindPopup(pop);
+            m.bindPopup(`<b>${n.name}</b><br>In: ${n.pIn.toFixed(2)} dBm<br>${n.type==='ODP'?'Local Out: '+n.pOutL.toFixed(2):''}`);
 
             if(n.parentId) {
                 let p = nodes.find(x => x.id === n.parentId);
-                L.polyline([p.latlng, n.latlng], { color: color, weight: n.type==='ONU'?2:4, dashArray: n.type==='ONU'?'5,5':'' }).addTo(map);
-                let mid = L.latLng((n.latlng.lat+p.latlng.lat)/2, (n.latlng.lng+p.latlng.lng)/2);
-                L.marker(mid, { icon: L.divIcon({ className: 'cable-label', html: `-${n.lC.toFixed(2)}`, iconSize:[30,10] }) }).addTo(map);
+                L.polyline([p.latlng, n.latlng], { color:color, weight:n.type==='ONU'?2:4, dashArray:n.type==='ONU'?'5,5':'' }).addTo(map);
             }
         });
-        saveData();
+        localStorage.setItem('ftth_v8_data', JSON.stringify(nodes));
         let s = nodes.find(x => x.id === selId);
-        document.getElementById('sel-status').innerHTML = s ? `Aktif: <b style="color:var(--accent)">${s.name}</b>` : "Pilih Sumber";
+        document.getElementById('sel-info').innerHTML = s ? `Aktif: <b>${s.name}</b>` : "Pilih Sumber";
     }
 
-    function startEdit(id) {
-        isEditing = true;
-        selId = id;
-        openM(nodes.find(n => n.id === id));
-    }
-
-    function del(id) { nodes = nodes.filter(n => n.id !== id && n.parentId !== id); selId = null; recalculateAll(); render(); }
-    function undo() { nodes.pop(); selId = nodes.length?nodes[nodes.length-1].id:null; recalculateAll(); render(); }
+    function undo() { nodes.pop(); selId = nodes.length?nodes[nodes.length-1].id:null; recalc(); render(); }
     function closeM() { document.getElementById('modal-form').style.display = 'none'; }
-    function saveData() { localStorage.setItem('ftth_v7_data', JSON.stringify(nodes)); }
     function resetAll() { if(confirm("Reset?")) { nodes=[]; localStorage.clear(); location.reload(); } }
 
-    recalculateAll();
-    render();
+    recalc(); render();
 </script>
 </body>
 </html>
