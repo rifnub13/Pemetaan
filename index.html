@@ -3,193 +3,226 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>FTTH Inventory Pro V6</title>
+    <title>FTTH Planner V7 - Auto Engine</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --dark: #1a1a1a; --gold: #f1c40f; --blue: #3498db; }
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--dark); color: white; }
+        :root { --dark: #121212; --accent: #f39c12; --blue: #3498db; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; }
         #map { height: 100vh; width: 100vw; }
 
-        /* UI Panels */
-        .panel { position: absolute; z-index: 1000; background: rgba(0,0,0,0.85); padding: 12px; border-radius: 12px; border: 1px solid #444; backdrop-filter: blur(5px); }
-        .top-left { top: 10px; left: 10px; width: 180px; }
-        .bottom-ui { bottom: 10px; left: 10px; right: 10px; display: flex; flex-direction: column; gap: 5px; }
+        /* UI */
+        .panel { position: absolute; z-index: 1000; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 12px; border: 1px solid #444; backdrop-filter: blur(8px); }
+        .top-left { top: 10px; left: 10px; width: 160px; }
+        .bottom-info { bottom: 10px; left: 10px; right: 10px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
 
-        /* Buttons */
-        button { border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 11px; width: 100%; margin-bottom: 4px; }
+        button { border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%; margin-bottom: 5px; }
         .btn-add { background: #2ecc71; color: white; }
-        .btn-util { background: #34495e; color: white; }
-        .btn-danger { background: #e74c3c; color: white; }
-        .active { border: 2px solid white; box-shadow: 0 0 10px var(--blue); }
+        .btn-edit { background: #f1c40f; color: black; margin-top: 5px; }
+        .btn-gps { background: #3498db; color: white; }
+        .active { outline: 3px solid white; }
 
-        /* Modal */
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000; background: white; color: black; padding: 20px; border-radius: 15px; width: 85%; max-width: 350px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        /* Modal Custom */
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2000; background: white; color: black; padding: 20px; border-radius: 15px; width: 85%; max-width: 320px; box-shadow: 0 0 50px rgba(0,0,0,0.9); }
         input, select { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
-
-        /* Status Labels */
-        .pwr-tag { background: #000; color: #0f0; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 10px; }
-        .port-list { font-size: 11px; margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px; }
+        
+        .pwr-label { background: black; color: #0f0; padding: 2px 5px; border-radius: 4px; font-size: 10px; font-family: monospace; border: 1px solid #555; }
+        .cable-label { background: white; color: red; padding: 1px 3px; font-size: 9px; font-weight: bold; border-radius: 3px; }
     </style>
 </head>
 <body>
 
 <div class="panel top-left">
-    <div style="font-size: 12px; margin-bottom: 8px; color: var(--gold); border-bottom: 1px solid #444;">FTTH DESIGNER V6</div>
-    <button class="btn-add" id="btn-OLT" onclick="setMode('OLT')">➕ OLT SERVER</button>
-    <button class="btn-add" id="btn-ODP" onclick="setMode('ODP')">➕ ODP (DIST)</button>
-    <button class="btn-add" id="btn-ONU" onclick="setMode('ONU')">🏠 ONU (USER)</button>
-    <div style="margin: 8px 0;"></div>
-    <button class="btn-util" onclick="exportJSON()">📤 EXPORT DATA</button>
-    <button class="btn-util" onclick="document.getElementById('importFile').click()">📥 IMPORT DATA</button>
-    <input type="file" id="importFile" style="display:none" onchange="importJSON(event)">
-    <button class="btn-danger" onclick="resetAll()">⚠️ RESET MAP</button>
+    <button class="btn-gps" onclick="locateMe()">📍 LOKASI SAYA</button>
+    <div style="height: 1px; background: #444; margin: 5px 0;"></div>
+    <button class="btn-add" id="btn-OLT" onclick="setMode('OLT')">➕ OLT</button>
+    <button class="btn-add" id="btn-ODP" onclick="setMode('ODP')">➕ ODP</button>
+    <button class="btn-add" id="btn-ONU" onclick="setMode('ONU')">🏠 ONU</button>
+    <button style="background:#e74c3c; color:white;" onclick="undo()">UNDO</button>
 </div>
 
-<div class="panel bottom-ui">
-    <div id="info-status" style="font-size: 11px;">Sumber Aktif: <span style="color:var(--gold)">Belum dipilih</span></div>
-    <div style="display: flex; gap: 5px;">
-        <button class="btn-util" style="width: auto;" onclick="undo()">UNDO</button>
-        <button class="btn-util" style="width: auto;" onclick="saveLocal()">SAVE TO HP</button>
-    </div>
+<div class="panel bottom-info">
+    <div id="sel-status">Aktif: <b style="color:var(--accent)">Pilih Sumber</b></div>
+    <button style="width:auto; padding:5px; background:#444; color:white;" onclick="saveData()">SIMPAN</button>
 </div>
 
-<!-- Modal -->
+<!-- Modal Config -->
 <div id="modal-form" class="modal">
-    <h3 id="m-title" style="margin:0">Konfigurasi</h3>
+    <h3 id="m-title" style="margin:0">Setting Perangkat</h3>
     <div id="m-body"></div>
-    <button class="btn-add" onclick="commitNode()">KONFIRMASI</button>
-    <button class="btn-util" style="background:#95a5a6" onclick="closeM()">BATAL</button>
+    <button class="btn-add" onclick="commitNode()">SIMPAN PERUBAHAN</button>
+    <button style="background:#bdc3c7;" onclick="closeM()">BATAL</button>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    const map = L.map('map', { zoomControl: false }).setView([-6.2, 106.8], 13);
-    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
+    // Lokasi Default sesuai permintaan (Sekitar Temanggung)
+    const defLoc = [-7.318, 110.169];
+    const map = L.map('map', { zoomControl: false }).setView(defLoc, 17);
+    
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        maxZoom: 21, subdomains:['mt0','mt1','mt2','mt3']
+    }).addTo(map);
 
-    let nodes = JSON.parse(localStorage.getItem('ftth_v6_data')) || [];
+    let nodes = JSON.parse(localStorage.getItem('ftth_v7_data')) || [];
     let curMode = null;
     let selId = null;
     let tempCoord = null;
+    let isEditing = false;
 
-    const LOSS_KM = 0.35;
-    const LOSS_CONN = 0.5;
+    const LOSS = { km: 0.35, conn: 0.5 };
     const PLC = { "1:2": 3.5, "1:4": 7.2, "1:8": 10.5, "1:16": 13.8 };
 
+    function locateMe() { map.locate({setView: true, maxZoom: 18}); }
+    map.on('locationfound', e => L.circle(e.latlng, {radius: 5}).addTo(map));
+
     function setMode(m) {
-        curMode = m;
+        curMode = m; isEditing = false;
         document.querySelectorAll('.btn-add').forEach(b => b.classList.remove('active'));
-        document.getElementById('btn-'+m).classList.add('active');
+        if(m) document.getElementById('btn-'+m).classList.add('active');
     }
 
     map.on('click', e => {
         if(!curMode) return;
-        let parent = nodes.find(n => n.id === selId);
-        if(curMode !== 'OLT' && (!parent || parent.type === 'ONU')) {
-            alert("⚠️ Error: ONU tidak bisa mengeluarkan kabel! Pilih OLT/ODP.");
-            return;
-        }
+        let p = nodes.find(n => n.id === selId);
+        if(curMode !== 'OLT' && (!p || p.type === 'ONU')) return alert("Pilih OLT/ODP sebagai sumber!");
         tempCoord = e.latlng;
         openM();
     });
 
-    function openM() {
+    function openM(editingNode = null) {
         const b = document.getElementById('m-body');
         document.getElementById('modal-form').style.display = 'block';
-        if(curMode === 'OLT') b.innerHTML = `SFP Power: <input type="number" id="f-pwr" value="7"> Nama OLT: <input id="f-name" value="OLT Pusat">`;
-        else if(curMode === 'ODP') b.innerHTML = `Type: <select id="f-type"><option value="FBT">FBT (Tapping)</option><option value="PLC">PLC Murni</option></select> Ratio Tap: <input type="number" id="f-ratio" value="10"> PLC Lokal: <select id="f-plc"><option value="1:8">1:8</option><option value="1:16">1:16</option></select>`;
-        else b.innerHTML = `Nama Pelanggan: <input id="f-user" placeholder="Nama/Alamat"> Port ODP: <input type="number" id="f-port" value="1" min="1" max="16">`;
+        
+        let target = editingNode || { type: curMode };
+
+        if(target.type === 'OLT') {
+            b.innerHTML = `Power SFP (dBm): <input type="number" id="f-pwr" value="${target.pOutN || 7}">
+                           Nama: <input id="f-name" value="${target.name || 'OLT Pusat'}">`;
+        } else if(target.type === 'ODP') {
+            b.innerHTML = `Tipe Box: <select id="f-box">
+                <option value="FBT" ${target.box==='FBT'?'selected':''}>FBT (Tapping)</option>
+                <option value="PLC" ${target.box==='PLC'?'selected':''}>PLC Murni</option>
+            </select>
+            Rasio Tap (Ke Lokal) %: <input type="number" id="f-ratio" value="${target.ratio || 10}">
+            Splitter Lokal: <select id="f-plc">
+                <option value="1:8" ${target.plc==='1:8'?'selected':''}>1:8</option>
+                <option value="1:16" ${target.plc==='1:16'?'selected':''}>1:16</option>
+                <option value="1:4" ${target.plc==='1:4'?'selected':''}>1:4</option>
+            </select>`;
+        } else {
+            b.innerHTML = `Nama Pelanggan: <input id="f-name" value="${target.name || ''}">`;
+        }
     }
 
     function commitNode() {
-        let p = nodes.find(n => n.id === selId);
-        let node = { id: Date.now(), latlng: tempCoord, type: curMode, parentId: selId, name: '', pIn: 0, pOutL: 0, pOutN: 0, ports: {} };
-
-        if(curMode === 'OLT') {
-            node.pIn = parseFloat(document.getElementById('f-pwr').value);
-            node.pOutN = node.pIn;
-            node.name = document.getElementById('f-name').value;
+        if(isEditing) {
+            let n = nodes.find(x => x.id === selId);
+            updateNodeData(n);
         } else {
-            let dist = p.latlng.distanceTo(tempCoord) / 1000;
-            let lC = (dist * LOSS_KM) + LOSS_CONN;
-            node.pIn = (p.pOutN !== -99 ? p.pOutN : p.pOutL) - lC;
-
-            if(curMode === 'ODP') {
-                let plcL = PLC[document.getElementById('f-plc').value];
-                if(document.getElementById('f-type').value === 'FBT') {
-                    let r = parseInt(document.getElementById('f-ratio').value);
-                    let lTap = -10 * Math.log10(r/100);
-                    let lThru = -10 * Math.log10((100-r)/100);
-                    node.pOutL = node.pIn - lTap - plcL;
-                    node.pOutN = node.pIn - lThru;
-                    node.name = `ODP ${100-r}/${r}`;
-                } else {
-                    node.pOutL = node.pIn - plcL;
-                    node.pOutN = -99;
-                    node.name = "ODP Murni";
-                }
-            } else { // ONU
-                let portNo = document.getElementById('f-port').value;
-                node.pIn = p.pOutL - lC;
-                node.name = document.getElementById('f-user').value || "User";
-                p.ports[portNo] = node.name; // Simpan di Inventory ODP
-            }
+            let n = { id: Date.now(), latlng: tempCoord, type: curMode, parentId: selId, name: '' };
+            updateNodeData(n);
+            nodes.push(n);
+            selId = n.id;
         }
-        nodes.push(node);
-        selId = node.id;
-        closeM(); render();
+        recalculateAll();
+        closeM();
+        render();
+    }
+
+    function updateNodeData(n) {
+        if(n.type === 'OLT') {
+            n.pOutN = parseFloat(document.getElementById('f-pwr').value);
+            n.name = document.getElementById('f-name').value;
+        } else if(n.type === 'ODP') {
+            n.box = document.getElementById('f-box').value;
+            n.ratio = parseInt(document.getElementById('f-ratio').value);
+            n.plc = document.getElementById('f-plc').value;
+            n.name = n.box === 'FBT' ? `ODP ${100-n.ratio}/${n.ratio}` : "ODP PLC";
+        } else {
+            n.name = document.getElementById('f-name').value || "Pelanggan";
+        }
+    }
+
+    function recalculateAll() {
+        // Find OLTs as starting points
+        nodes.filter(n => n.type === 'OLT').forEach(olt => {
+            olt.pIn = olt.pOutN;
+            calcChildren(olt);
+        });
+    }
+
+    function calcChildren(parent) {
+        nodes.filter(n => n.parentId === parent.id).forEach(child => {
+            let dist = parent.latlng.distanceTo(child.latlng) / 1000;
+            child.lC = (dist * LOSS.km) + LOSS.conn;
+            
+            // Power In logic
+            let sourcePower = (parent.type === 'OLT' || (parent.type === 'ODP' && parent.pOutN !== -99)) ? parent.pOutN : parent.pOutL;
+            if(child.type === 'ONU') sourcePower = parent.pOutL; // ONU always from Local
+
+            child.pIn = sourcePower - child.lC;
+
+            if(child.type === 'ODP') {
+                let plcL = PLC[child.plc];
+                if(child.box === 'FBT') {
+                    let lTap = -10 * Math.log10(child.ratio/100);
+                    let lThru = -10 * Math.log10((100-child.ratio)/100);
+                    child.pOutL = child.pIn - lTap - plcL;
+                    child.pOutN = child.pIn - lThru;
+                } else {
+                    child.pOutL = child.pIn - plcL;
+                    child.pOutN = -99;
+                }
+            }
+            calcChildren(child); // Recursive to end of line
+        });
     }
 
     function render() {
         map.eachLayer(l => { if(l instanceof L.CircleMarker || l instanceof L.Polyline || l instanceof L.Marker) map.removeLayer(l); });
+        
         nodes.forEach(n => {
-            let c = n.pIn > -25 ? '#2ecc71' : (n.pIn > -27 ? '#f1c40f' : (n.pIn > -30 ? '#e74c3c' : '#000'));
-            let m = L.circleMarker(n.latlng, { radius: n.id === selId ? 10 : 7, fillColor: c, color: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+            let color = n.pIn < -27 ? '#e74c3c' : (n.type==='OLT'?'#000':(n.type==='ODP'?'#f39c12':'#3498db'));
+            let m = L.circleMarker(n.latlng, { radius: n.id === selId ? 10 : 7, fillColor: color, color: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
             
-            L.marker(n.latlng, { icon: L.divIcon({ className: 'pwr-tag', html: n.pIn.toFixed(1), iconSize: [35, 12], iconAnchor: [17, -12] }) }).addTo(map);
+            // Label Power
+            L.marker(n.latlng, { icon: L.divIcon({ className: 'pwr-label', html: n.pIn.toFixed(1), iconSize:[35,12], iconAnchor:[17,-12] }) }).addTo(map);
 
             m.on('click', e => { L.DomEvent.stopPropagation(e); selId = n.id; render(); });
 
-            let pop = `<b>${n.name}</b><br>In: ${n.pIn.toFixed(2)} dBm<br>`;
-            if(n.type === 'ODP') {
-                pop += `<div class="port-list"><b>PORT INVENTORY:</b><br>`;
-                for(let i=1; i<=8; i++) pop += `${i}: ${n.ports[i] || '<span style="color:gray">Kosong</span>'}<br>`;
-                pop += `</div>`;
-            }
-            pop += `<button class="btn-danger" style="padding:2px; font-size:9px;" onclick="del(${n.id})">HAPUS</button>`;
+            let pop = `<b>${n.name}</b><br>Pin: ${n.pIn.toFixed(2)} dBm<br>`;
+            if(n.type==='ODP') pop += `<small>Inside: ${n.box} ${n.ratio?n.ratio+'%':''} + PLC ${n.plc}</small><br>`;
+            pop += `<button class="btn-edit" onclick="startEdit(${n.id})">⚙️ EDIT / SETTING</button>`;
+            pop += `<button style="background:red; color:white; margin-top:5px;" onclick="del(${n.id})">HAPUS</button>`;
             m.bindPopup(pop);
 
             if(n.parentId) {
                 let p = nodes.find(x => x.id === n.parentId);
-                L.polyline([p.latlng, n.latlng], { color: c, weight: n.type === 'ONU' ? 1.5 : 4, dashArray: n.type === 'ONU' ? '4,4' : '' }).addTo(map);
+                L.polyline([p.latlng, n.latlng], { color: color, weight: n.type==='ONU'?2:4, dashArray: n.type==='ONU'?'5,5':'' }).addTo(map);
+                let mid = L.latLng((n.latlng.lat+p.latlng.lat)/2, (n.latlng.lng+p.latlng.lng)/2);
+                L.marker(mid, { icon: L.divIcon({ className: 'cable-label', html: `-${n.lC.toFixed(2)}`, iconSize:[30,10] }) }).addTo(map);
             }
         });
-        saveLocal();
-        const active = nodes.find(n => n.id === selId);
-        document.getElementById('info-status').innerHTML = active ? `Sumber Aktif: <b style="color:var(--gold)">${active.name} (${active.pIn.toFixed(1)} dBm)</b>` : "Sumber Aktif: Pilih OLT/ODP";
+        saveData();
+        let s = nodes.find(x => x.id === selId);
+        document.getElementById('sel-status').innerHTML = s ? `Aktif: <b style="color:var(--accent)">${s.name}</b>` : "Pilih Sumber";
     }
 
+    function startEdit(id) {
+        isEditing = true;
+        selId = id;
+        openM(nodes.find(n => n.id === id));
+    }
+
+    function del(id) { nodes = nodes.filter(n => n.id !== id && n.parentId !== id); selId = null; recalculateAll(); render(); }
+    function undo() { nodes.pop(); selId = nodes.length?nodes[nodes.length-1].id:null; recalculateAll(); render(); }
     function closeM() { document.getElementById('modal-form').style.display = 'none'; }
-    function saveLocal() { localStorage.setItem('ftth_v6_data', JSON.stringify(nodes)); }
-    function undo() { nodes.pop(); selId = nodes.length?nodes[nodes.length-1].id:null; render(); }
-    function resetAll() { if(confirm("Hapus semua?")) { nodes=[]; localStorage.clear(); location.reload(); } }
-    function del(id) { nodes = nodes.filter(n => n.id !== id); selId = null; render(); }
+    function saveData() { localStorage.setItem('ftth_v7_data', JSON.stringify(nodes)); }
+    function resetAll() { if(confirm("Reset?")) { nodes=[]; localStorage.clear(); location.reload(); } }
 
-    function exportJSON() {
-        const blob = new Blob([JSON.stringify(nodes)], {type: "application/json"});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "FTTH_Network_Data.json"; a.click();
-    }
-
-    function importJSON(e) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = (ev) => { nodes = JSON.parse(ev.target.result); render(); };
-        reader.readAsText(file);
-    }
-
+    recalculateAll();
     render();
 </script>
 </body>
