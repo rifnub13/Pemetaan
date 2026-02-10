@@ -3,148 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>FTTH Network Planner Pro</title>
+    <title>FTTH Pro Mapper</title>
     
-    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        #map { height: 100vh; width: 100vw; }
-        .info-panel {
+        :root { --primary: #2c3e50; --accent: #3498db; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        
+        /* UI Controls */
+        .controls {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 200px;
+        }
+        .btn-group { display: flex; flex-direction: column; gap: 5px; }
+        button {
+            padding: 10px; border: none; border-radius: 4px;
+            background: var(--primary); color: white; cursor: pointer; font-size: 12px;
+        }
+        button.active { background: var(--accent); border: 2px solid #000; }
+        button.gps-btn { background: #27ae60; }
+        
+        .status-panel {
             position: absolute; bottom: 20px; left: 10px; right: 10px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px; border-radius: 10px; z-index: 1000;
-            box-shadow: 0 0 15px rgba(0,0,0,0.2);
-            font-size: 14px;
+            background: rgba(255,255,255,0.95); padding: 15px;
+            border-radius: 10px; z-index: 1000; font-size: 13px;
+            max-height: 30vh; overflow-y: auto;
         }
-        .status-ok { color: green; font-weight: bold; }
-        .status-bad { color: red; font-weight: bold; }
-        .btn-add {
-            background: #007bff; color: white; border: none;
-            padding: 8px 12px; border-radius: 5px; cursor: pointer;
-        }
+        .node-info { border-bottom: 1px solid #ddd; padding: 5px 0; }
+        .success { color: green; } .warning { color: orange; } .danger { color: red; }
     </style>
 </head>
 <body>
 
-<div id="map"></div>
-
-<div class="info-panel">
-    <strong>FTTH Control Center</strong><br>
-    Power OLT (SFP): <input type="number" id="oltPower" value="7" style="width: 40px;"> dBm <br>
-    <small>Klik pada peta untuk menempatkan: 1. OLT, 2. ODP, 3. ONU</small>
-    <div id="summary" style="margin-top:10px; font-size: 12px;"></div>
-    <button class="btn-add" onclick="resetMap()">Reset Peta</button>
+<div class="controls">
+    <strong>Toolbox</strong>
+    <div class="btn-group">
+        <button class="gps-btn" onclick="locateMe()">📍 Lokasi Saya</button>
+        <hr>
+        <small>Pilih Mode Klik:</small>
+        <button id="btn-OLT" onclick="setMode('OLT')">Tambah OLT</button>
+        <button id="btn-ODP" onclick="setMode('ODP')">Tambah ODP</button>
+        <button id="btn-ONU" onclick="setMode('ONU')">Tambah ONU</button>
+    </div>
+    <div id="active-parent" style="font-size: 10px; margin-top:5px; color: blue;"></div>
 </div>
 
-<!-- Leaflet JS -->
+<div id="map"></div>
+<div class="status-panel" id="status-panel">
+    <strong>Ringkasan Topologi:</strong>
+    <div id="logs">Klik "Tambah OLT" untuk memulai.</div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Konfigurasi Standar Redaman
-    const LOSS_PER_KM = 0.35;
-    const LOSS_CONNECTOR = 0.5;
-    const SPLITTER_LOSS = {
-        'PLC_1_8': 10.5,
-        'PLC_1_16': 13.8,
-        'FBT_90_10': 10.0 // Contoh redaman pada kaki 10%
-    };
+    let map = L.map('map').setView([-6.2000, 106.8166], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let map = L.map('map').setView([-6.2000, 106.8166], 13); // Default Jakarta
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
+    let currentMode = null;
+    let nodes = []; // {id, latlng, type, powerIn, powerOutNext, powerOutLocal, parentId, portsUsed}
+    let lastOdpId = null;
+    let oltPower = 7.0; // dBm
 
-    let nodes = [];
-    let lines = [];
+    // Konstanta Redaman
+    const LOSS = { cable: 0.35, conn: 0.5, plc8: 10.5, plc16: 13.8 };
+    const FBT = { ratio10: 10.5, ratio90: 0.8 }; // 90/10 ratio
 
-    // Fungsi menambah titik (OLT -> ODP -> ONU)
-    map.on('click', function(e) {
-        let type = "";
-        if (nodes.length === 0) type = "OLT";
-        else if (nodes.length === 1) type = "ODP";
-        else type = "ONU";
+    function locateMe() {
+        map.locate({setView: true, maxZoom: 18});
+    }
 
-        let newNode = {
-            id: nodes.length,
-            latlng: e.latlng,
-            type: type,
-            powerIn: 0,
-            powerOut: 0
-        };
-
-        nodes.push(newNode);
-        renderNetwork();
+    map.on('locationfound', (e) => {
+        L.circle(e.latlng, e.accuracy).addTo(map);
+        L.marker(e.latlng).addTo(map).bindPopup("Anda di sini").openPopup();
     });
 
-    function renderNetwork() {
-        // Bersihkan layer lama
-        map.eachLayer((layer) => {
-            if (layer instanceof L.Marker || layer instanceof L.Polyline) {
-                map.removeLayer(layer);
+    function setMode(mode) {
+        currentMode = mode;
+        document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn-' + mode).classList.add('active');
+    }
+
+    map.on('click', function(e) {
+        if (!currentMode) return alert("Pilih mode (OLT/ODP/ONU) terlebih dahulu!");
+        addNode(e.latlng);
+    });
+
+    function addNode(latlng) {
+        let node = {
+            id: Date.now(),
+            latlng: latlng,
+            type: currentMode,
+            parentId: null,
+            powerIn: 0,
+            powerOutNext: 0,
+            powerOutLocal: 0,
+            portsUsed: 0,
+            config: ""
+        };
+
+        if (currentMode === 'OLT') {
+            node.powerIn = oltPower;
+            node.powerOutNext = oltPower;
+        } else if (currentMode === 'ODP') {
+            let parent = nodes.find(n => n.type === 'OLT' || (n.type === 'ODP' && n.powerOutNext !== 0));
+            if (!parent) return alert("Tempatkan OLT dulu!");
+            
+            // Tanya tipe ODP
+            let tipe = confirm("Gunakan FBT 90/10? (OK=FBT, Cancel=PLC 1:8 Murni)");
+            
+            let dist = parent.latlng.distanceTo(latlng) / 1000;
+            let cableLoss = (dist * LOSS.cable) + LOSS.conn;
+            node.powerIn = (parent.type === 'OLT' ? parent.powerOutNext : parent.powerOutNext) - cableLoss;
+            node.parentId = parent.id;
+
+            if (tipe) { // FBT Logic
+                node.config = "FBT 90/10 + PLC 1:8";
+                node.powerOutLocal = node.powerIn - FBT.ratio10 - LOSS.plc8; // 10% masuk ke PLC 1:8
+                node.powerOutNext = node.powerIn - FBT.ratio90; // 90% lanjut
+            } else {
+                node.config = "PLC 1:8 Murni";
+                node.powerOutLocal = node.powerIn - LOSS.plc8;
+                node.powerOutNext = 0; // Buntu
+            }
+            lastOdpId = node.id;
+        } else if (currentMode === 'ONU') {
+            let parent = nodes.find(n => n.id === lastOdpId);
+            if (!parent) return alert("Klik ODP tujuan terlebih dahulu!");
+            if (parent.portsUsed >= 8) return alert("Port ODP Penuh!");
+
+            let dist = parent.latlng.distanceTo(latlng) / 1000;
+            node.powerIn = parent.powerOutLocal - (dist * LOSS.cable) - LOSS.conn;
+            node.parentId = parent.id;
+            parent.portsUsed++;
+        }
+
+        nodes.push(node);
+        render();
+    }
+
+    function render() {
+        // Logika Visual
+        nodes.forEach(node => {
+            let color = node.type === 'OLT' ? 'green' : (node.type === 'ODP' ? 'orange' : 'blue');
+            let marker = L.circleMarker(node.latlng, {radius: 8, color: color, fillOpacity: 0.8}).addTo(map);
+            
+            let status = node.powerIn < -27 ? "danger" : "success";
+            let popup = `<b>${node.type}</b><br>
+                         In: ${node.powerIn.toFixed(2)} dBm<br>
+                         ${node.type==='ODP' ? 'Local Out: '+node.powerOutLocal.toFixed(2)+'<br>Port: '+node.portsUsed+'/8' : ''}
+                         <br><small>${node.config}</small>`;
+            marker.bindPopup(popup);
+
+            // Gambar Kabel
+            if (node.parentId) {
+                let parent = nodes.find(n => n.id === node.parentId);
+                L.polyline([parent.latlng, node.latlng], {color: color, weight: 2, dashArray: node.type === 'ONU' ? '5,5' : ''}).addTo(map);
             }
         });
 
-        let currentPower = parseFloat(document.getElementById('oltPower').value);
-        let summaryHtml = "";
-
-        for (let i = 0; i < nodes.length; i++) {
-            let node = nodes[i];
-            let color = "blue";
-            let label = node.type;
-
-            if (i > 0) {
-                // Hitung Jarak dari node sebelumnya
-                let dist = nodes[i-1].latlng.distanceTo(node.latlng) / 1000; // km
-                let cableLoss = (dist * LOSS_PER_KM) + LOSS_CONNECTOR;
-                
-                node.powerIn = currentPower - cableLoss;
-                
-                // Jika ODP, tambahkan redaman splitter
-                if (node.type === "ODP") {
-                    node.splitter = "PLC 1:8";
-                    node.powerOut = node.powerIn - SPLITTER_LOSS.PLC_1_8;
-                    currentPower = node.powerOut; // Power yang lanjut ke ONU
-                } else if (node.type === "ONU") {
-                    node.powerOut = node.powerIn; // ONU adalah terminal
-                }
-
-                // Gambar Kabel
-                L.polyline([nodes[i-1].latlng, node.latlng], {color: 'red', weight: 3}).addTo(map);
-            } else {
-                // OLT Power
-                node.powerIn = currentPower;
-                node.powerOut = currentPower;
-            }
-
-            // Tentukan status ONU (Sensitivitas standar -27 dBm)
-            let statusClass = (node.powerOut < -27) ? "status-bad" : "status-ok";
-            
-            // Tambahkan Marker
-            let iconColor = node.type === "OLT" ? "green" : (node.type === "ODP" ? "orange" : "blue");
-            let marker = L.circleMarker(node.latlng, {
-                radius: 10,
-                fillColor: iconColor,
-                color: "#000",
-                fillOpacity: 1
-            }).addTo(map);
-
-            let popupContent = `
-                <strong>${node.type}</strong><br>
-                Pin: ${node.powerIn.toFixed(2)} dBm<br>
-                Pout: ${node.powerOut.toFixed(2)} dBm<br>
-                ${node.type === 'ODP' ? 'Splitter: ' + node.splitter : ''}
-            `;
-            marker.bindPopup(popupContent).openPopup();
-
-            summaryHtml += `• ${node.type}: ${node.powerOut.toFixed(2)} dBm <span class="${statusClass}">${node.powerOut < -27 ? '(DROP)' : '(OK)'}</span><br>`;
-        }
-        document.getElementById('summary').innerHTML = summaryHtml;
-    }
-
-    function resetMap() {
-        nodes = [];
-        document.getElementById('summary').innerHTML = "";
-        renderNetwork();
+        // Update Panel
+        let logDiv = document.getElementById('logs');
+        logDiv.innerHTML = nodes.map(n => `
+            <div class="node-info">
+                [${n.type}] In: <span class="${n.powerIn < -27 ? 'danger' : 'success'}">${n.powerIn.toFixed(2)} dBm</span>
+                ${n.type === 'ODP' ? ' | Port: ' + n.portsUsed + '/8' : ''}
+            </div>
+        `).join('');
     }
 </script>
 
