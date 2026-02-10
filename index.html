@@ -3,230 +3,245 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>FTTH Designer Pro Satellite</title>
+    <title>FTTH Planner V3 - Estafet Logic</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --primary: #2c3e50; --accent: #e67e22; }
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-        #map { height: 100vh; width: 100vw; background: #000; }
+        :root { --primary: #2c3e50; --accent: #e67e22; --success: #27ae60; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #000; }
+        #map { height: 100vh; width: 100vw; }
         
-        /* UI Panels */
-        .panel {
-            position: absolute; z-index: 1000; background: rgba(255,255,255,0.9);
-            padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        /* Floating UI */
+        .ui-overlay { position: absolute; z-index: 1000; pointer-events: none; width: 100%; height: 100%; }
+        .ui-overlay * { pointer-events: auto; }
+        
+        .top-menu { top: 10px; left: 10px; width: 180px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        
+        .mini-log { 
+            bottom: 10px; right: 10px; width: 200px; 
+            background: rgba(255,255,255,0.9); padding: 8px; border-radius: 8px; font-size: 11px;
+            max-height: 120px; overflow-y: auto; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
         }
-        .top-menu { top: 10px; left: 10px; width: 220px; }
-        .bottom-info { bottom: 20px; left: 10px; right: 10px; max-height: 30vh; overflow-y: auto; }
-        
-        /* Config Form */
-        .config-overlay {
+
+        /* Modals */
+        .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            z-index: 2000; background: white; padding: 20px; border-radius: 12px;
-            width: 85%; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            z-index: 2000; background: white; padding: 15px; border-radius: 12px;
+            width: 85%; max-width: 350px; box-shadow: 0 0 30px rgba(0,0,0,0.5);
         }
         
-        button {
-            width: 100%; padding: 12px; margin: 4px 0; border: none;
-            border-radius: 6px; background: var(--primary); color: white;
-            font-weight: bold; cursor: pointer; font-size: 13px;
+        button { 
+            width: 100%; padding: 10px; margin: 3px 0; border: none; border-radius: 5px; 
+            background: var(--primary); color: white; font-weight: bold; cursor: pointer; font-size: 12px;
         }
-        button.active { background: var(--accent); border: 2px solid white; }
-        button.save { background: #27ae60; }
-        button.reset { background: #c0392b; }
+        button.active { background: var(--accent); border: 2px solid #fff; }
+        button.gps { background: var(--success); }
         
-        input, select { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
-        .node-card { border-left: 5px solid var(--accent); padding: 5px 10px; margin-bottom: 5px; background: #eee; font-size: 12px; }
+        input, select { width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .label-text { font-size: 11px; font-weight: bold; color: #555; display: block; margin-top: 5px; }
+        .red-text { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<!-- Panel Atas -->
-<div class="panel top-menu">
-    <button onclick="locateMe()" style="background: #2980b9;">📍 LOKASI SAYA</button>
-    <div style="margin: 5px 0; font-size: 11px; font-weight: bold;">MODE PASANG:</div>
-    <button id="btn-OLT" onclick="prepareAdd('OLT')">OLT (Pusat Server)</button>
-    <button id="btn-ODP" onclick="prepareAdd('ODP')">ODP (Distribusi)</button>
-    <button id="btn-ONU" onclick="prepareAdd('ONU')">ONU (Pelanggan)</button>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-        <button class="save" onclick="saveTopology()">SIMPAN</button>
-        <button class="reset" onclick="resetAll()">RESET</button>
+<div class="ui-overlay">
+    <div class="top-menu">
+        <button class="gps" onclick="locateMe()">📍 LOKASI SAYA</button>
+        <div style="height: 1px; background: #ddd; margin: 5px 0;"></div>
+        <button id="btn-OLT" onclick="setMode('OLT')">PASANG OLT</button>
+        <button id="btn-ODP" onclick="setMode('ODP')">PASANG ODP</button>
+        <button id="btn-ONU" onclick="setMode('ONU')">PASANG ONU</button>
+        <button style="background:#7f8c8d;" onclick="saveData()">SIMPAN</button>
+        <button style="background:#c0392b; font-size: 10px;" onclick="resetData()">RESET</button>
+    </div>
+
+    <div class="mini-log" id="mini-log">
+        <strong>Status Parent:</strong>
+        <div id="parent-info">Pilih Sumber Power</div>
     </div>
 </div>
 
-<!-- Modal Konfigurasi -->
-<div id="config-modal" class="config-overlay">
-    <h3 id="modal-title">Konfigurasi Perangkat</h3>
-    <div id="modal-content"></div>
-    <button onclick="confirmNode()">PASANG SEKARANG</button>
+<!-- Modal Config -->
+<div id="modal-config" class="modal">
+    <h3 id="modal-title" style="margin-top:0;">Config</h3>
+    <div id="modal-fields"></div>
+    <button onclick="commitNode()">KONFIRMASI</button>
     <button onclick="closeModal()" style="background:#95a5a6;">BATAL</button>
-</div>
-
-<!-- Panel Bawah -->
-<div class="panel bottom-info" id="status-panel">
-    <strong>Log Jaringan:</strong>
-    <div id="device-list">Menunggu data...</div>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // Inisialisasi Peta Satelit Google Hybrid
-    let map = L.map('map').setView([-6.2000, 106.8166], 13);
-    let satLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+    const map = L.map('map', { zoomControl: false }).setView([-6.2000, 106.8166], 13);
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
         maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3']
     }).addTo(map);
 
-    let nodes = JSON.parse(localStorage.getItem('ftth_data')) || [];
-    let tempCoord = null;
+    let nodes = JSON.parse(localStorage.getItem('ftth_v3_data')) || [];
     let currentMode = null;
     let selectedParentId = null;
+    let tempLatLng = null;
 
-    // Konstanta Redaman Standar
     const LOSS = { cable: 0.35, conn: 0.5 };
-    const PLC_LOSS = { "1:2": 3.5, "1:4": 7.2, "1:8": 10.5, "1:16": 13.8 };
+    const PLC_VALS = { "1:2": 3.5, "1:4": 7.2, "1:8": 10.5, "1:16": 13.8 };
 
     function locateMe() { map.locate({setView: true, maxZoom: 18}); }
+    map.on('locationfound', (e) => L.circleMarker(e.latlng, {radius: 5, color: 'cyan'}).addTo(map));
 
-    function prepareAdd(mode) {
+    function setMode(mode) {
         currentMode = mode;
         document.querySelectorAll('.top-menu button').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-'+mode).classList.add('active');
-        
-        if(mode !== 'OLT' && nodes.length > 0) {
-            alert("Silakan KLIK PERANGKAT SUMBER di peta sebagai input power.");
-        }
     }
 
     map.on('click', function(e) {
         if (!currentMode) return;
-        tempCoord = e.latlng;
-        showConfig();
+        tempLatLng = e.latlng;
+        openModal();
     });
 
-    function showConfig() {
-        const modal = document.getElementById('config-modal');
-        const content = document.getElementById('modal-content');
+    function openModal() {
+        const modal = document.getElementById('modal-config');
+        const fields = document.getElementById('modal-fields');
         modal.style.display = 'block';
 
         if (currentMode === 'OLT') {
-            content.innerHTML = `Power SFP (dBm): 
-                <select id="val-sfp">
-                    <option value="3">+3 dBm</option>
-                    <option value="5">+5 dBm</option>
-                    <option value="7" selected>+7 dBm</option>
-                    <option value="9">+9 dBm</option>
-                </select>`;
+            document.getElementById('modal-title').innerText = "Konfigurasi OLT";
+            fields.innerHTML = `
+                <span class="label-text">Power SFP (dBm)</span>
+                <select id="f-sfp"><option value="3">+3</option><option value="5">+5</option><option value="7" selected>+7</option><option value="9">+9</option></select>
+                <span class="label-text">Nama Server</span>
+                <input type="text" id="f-name" value="Pusat Server">
+            `;
         } else if (currentMode === 'ODP') {
-            content.innerHTML = `Pilih Jenis Splitter:
-                <select id="val-type" onchange="toggleSplitter()">
-                    <option value="PLC">PLC Splitter (Murni)</option>
-                    <option value="FBT">FBT Splitter (Estafet/Tapping)</option>
+            document.getElementById('modal-title').innerText = "Konfigurasi ODP";
+            fields.innerHTML = `
+                <span class="label-text">Tipe Splitter</span>
+                <select id="f-type" onchange="toggleODPFields()">
+                    <option value="FBT">FBT (Tapping/Estafet)</option>
+                    <option value="PLC">PLC (End Point)</option>
                 </select>
-                <div id="plc-opt">
-                    Rasio: <select id="val-plc">
-                        <option value="1:2">1:2</option>
-                        <option value="1:4">1:4</option>
-                        <option value="1:8" selected>1:8</option>
-                        <option value="1:16">1:16</option>
-                    </select>
+                <div id="box-fbt">
+                    <span class="label-text">Rasio Tap (%) - Masuk ke PLC</span>
+                    <input type="number" id="f-ratio" value="10" min="1" max="99">
                 </div>
-                <div id="fbt-opt" style="display:none;">
-                    Rasio Tap (%): <input type="number" id="val-fbt" value="10" min="1" max="99">
-                    <small>*Sisa % akan diteruskan ke ODP selanjutnya</small>
-                </div>`;
-        } else {
-            content.innerHTML = `<p>Hubungkan Pelanggan ke ODP terpilih?</p>`;
+                <span class="label-text">Pilih PLC Lokal (Untuk Pelanggan)</span>
+                <select id="f-plc"><option value="1:2">1:2</option><option value="1:4">1:4</option><option value="1:8" selected>1:8</option><option value="1:16">1:16</option></select>
+            `;
+        } else if (currentMode === 'ONU') {
+            document.getElementById('modal-title').innerText = "Data Pelanggan";
+            fields.innerHTML = `
+                <span class="label-text">Nama Pelanggan</span>
+                <input type="text" id="f-name" placeholder="Contoh: Bpk. Ahmad">
+                <span class="label-text">Keterangan / Alamat</span>
+                <input type="text" id="f-desc" placeholder="Blok A No. 5">
+            `;
         }
     }
 
-    function confirmNode() {
+    function toggleODPFields() {
+        const type = document.getElementById('f-type').value;
+        document.getElementById('box-fbt').style.display = (type === 'FBT') ? 'block' : 'none';
+    }
+
+    function commitNode() {
         let parent = nodes.find(n => n.id === selectedParentId);
+        if (currentMode !== 'OLT' && !parent) return alert("Pilih sumber power (Klik marker OLT/ODP) dulu!");
+
         let node = {
-            id: Date.now(),
-            latlng: tempCoord,
-            type: currentMode,
-            parentId: selectedParentId || null,
-            powerIn: 0, powerOutEstafet: 0, powerOutLocal: 0, name: currentMode
+            id: Date.now(), latlng: tempLatLng, type: currentMode, parentId: selectedParentId || null,
+            name: '', powerIn: 0, powerOutLocal: 0, powerOutEstafet: 0, desc: ''
         };
 
         if (currentMode === 'OLT') {
-            node.powerIn = parseFloat(document.getElementById('val-sfp').value);
+            node.powerIn = parseFloat(document.getElementById('f-sfp').value);
             node.powerOutEstafet = node.powerIn;
+            node.name = document.getElementById('f-name').value;
         } else {
-            // Hitung Redaman Kabel
-            let dist = parent.latlng.distanceTo(tempCoord) / 1000;
+            let dist = parent.latlng.distanceTo(tempLatLng) / 1000;
             let cableLoss = (dist * LOSS.cable) + LOSS.conn;
-            
+            node.powerIn = (parent.type === 'ONU' ? 0 : parent.powerOutEstafet) - cableLoss;
+
             if (currentMode === 'ODP') {
-                node.powerIn = parent.powerOutEstafet - cableLoss;
-                let splitType = document.getElementById('val-type').value;
-                if (splitType === 'PLC') {
-                    let r = document.getElementById('val-plc').value;
-                    node.powerOutLocal = node.powerIn - PLC_LOSS[r];
-                    node.powerOutEstafet = -99; // Buntu
-                } else {
-                    let ratio = parseInt(document.getElementById('val-fbt').value);
-                    // Rumus Logaritma Optik: Loss = -10 * log10(rasio/100)
-                    let lossTap = -10 * Math.log10(ratio/100);
-                    let lossThru = -10 * Math.log10((100-ratio)/100);
-                    node.powerOutLocal = node.powerIn - lossTap - PLC_LOSS["1:8"];
+                const type = document.getElementById('f-type').value;
+                const plcLoss = PLC_VALS[document.getElementById('f-plc').value];
+                
+                if (type === 'FBT') {
+                    const ratio = parseInt(document.getElementById('f-ratio').value);
+                    const lossTap = -10 * Math.log10(ratio/100);
+                    const lossThru = -10 * Math.log10((100-ratio)/100);
+                    node.powerOutLocal = node.powerIn - lossTap - plcLoss;
                     node.powerOutEstafet = node.powerIn - lossThru;
-                    node.name += ` FBT ${100-ratio}/${ratio}`;
+                    node.name = `ODP FBT ${100-ratio}:${ratio}`;
+                } else {
+                    node.powerOutLocal = node.powerIn - plcLoss;
+                    node.powerOutEstafet = -99;
+                    node.name = `ODP PLC ${document.getElementById('f-plc').value}`;
                 }
             } else { // ONU
                 node.powerIn = parent.powerOutLocal - cableLoss;
+                node.name = document.getElementById('f-name').value || "Pelanggan";
+                node.desc = document.getElementById('f-desc').value;
             }
         }
 
         nodes.push(node);
+        selectedParentId = node.id; // Otomatis jadikan parent untuk klik berikutnya
         closeModal();
         render();
     }
 
     function render() {
         map.eachLayer(l => { if(l instanceof L.CircleMarker || l instanceof L.Polyline) map.removeLayer(l); });
-        let listHtml = "";
-
+        
         nodes.forEach(n => {
             let color = n.type === 'OLT' ? 'red' : (n.type === 'ODP' ? '#f39c12' : '#3498db');
             let marker = L.circleMarker(n.latlng, {
-                radius: n.id === selectedParentId ? 12 : 8,
+                radius: n.id === selectedParentId ? 12 : 7,
                 color: '#fff', fillColor: color, fillOpacity: 1, weight: 2
             }).addTo(map);
 
             marker.on('click', (e) => {
                 L.DomEvent.stopPropagation(e);
                 selectedParentId = n.id;
+                updateParentInfo(n);
                 render();
             });
 
-            marker.bindPopup(`<b>${n.name}</b><br>Pin: ${n.powerIn.toFixed(2)} dBm`);
+            let popupContent = `
+                <div style="font-size:12px;">
+                    <b>${n.name}</b><br>
+                    Power In: <span class="${n.powerIn < -27 ? 'red-text':''}">${n.powerIn.toFixed(2)} dBm</span><br>
+                    ${n.type === 'ODP' ? 'Out Lokal: ' + n.powerOutLocal.toFixed(2) + ' dBm<br>Out Estafet: ' + (n.powerOutEstafet < -50 ? 'OFF' : n.powerOutEstafet.toFixed(2)) : ''}
+                    ${n.desc ? 'Ket: ' + n.desc : ''}
+                </div>`;
+            marker.bindPopup(popupContent);
 
             if (n.parentId) {
                 let p = nodes.find(x => x.id === n.parentId);
-                L.polyline([p.latlng, n.latlng], {color: color, weight: 3, opacity: 0.7}).addTo(map);
+                L.polyline([p.latlng, n.latlng], {
+                    color: n.type === 'ONU' ? '#3498db' : '#f39c12',
+                    weight: n.type === 'ONU' ? 2 : 4,
+                    dashArray: n.type === 'ONU' ? '5,5' : ''
+                }).addTo(map);
             }
-
-            listHtml += `<div class="node-card" onclick="focusNode(${n.latlng.lat}, ${n.latlng.lng})">
-                <b>${n.name}</b> | In: <span style="color:${n.powerIn < -27 ? 'red':'green'}">${n.powerIn.toFixed(2)} dBm</span>
-            </div>`;
         });
-        document.getElementById('device-list').innerHTML = listHtml;
+        
+        const active = nodes.find(n => n.id === selectedParentId);
+        if(active) updateParentInfo(active);
     }
 
-    function toggleSplitter() {
-        let isFBT = document.getElementById('val-type').value === 'FBT';
-        document.getElementById('plc-opt').style.display = isFBT ? 'none' : 'block';
-        document.getElementById('fbt-opt').style.display = isFBT ? 'block' : 'none';
+    function updateParentInfo(n) {
+        document.getElementById('parent-info').innerHTML = `
+            <span style="color:blue">Aktif: ${n.name}</span><br>
+            Power: ${n.powerIn.toFixed(2)} dBm
+        `;
     }
 
-    function closeModal() { document.getElementById('config-modal').style.display = 'none'; }
-    function saveTopology() { localStorage.setItem('ftth_data', JSON.stringify(nodes)); alert("Tersimpan!"); }
-    function resetAll() { if(confirm("Hapus semua?")) { nodes = []; render(); localStorage.clear(); } }
-    function focusNode(lat, lng) { map.setView([lat, lng], 19); }
+    function closeModal() { document.getElementById('modal-config').style.display = 'none'; }
+    function saveData() { localStorage.setItem('ftth_v3_data', JSON.stringify(nodes)); alert("Tersimpan di HP!"); }
+    function resetData() { if(confirm("Hapus semua?")) { nodes = []; localStorage.clear(); location.reload(); } }
 
-    // Jalankan render awal
     render();
 </script>
 
